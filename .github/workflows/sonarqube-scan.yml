@@ -8,10 +8,20 @@ on:
         required: true
         type: string
       working-directory:
-        description: Directory where the solution lives (relative to repo root)
+        description: Directory where the solution lives (used when autodetect is false)
         required: false
         type: string
         default: '.'
+      autodetect-working-directory:
+        description: If true, resolve solution at repo root or monorepo-package-path
+        required: false
+        type: boolean
+        default: false
+      monorepo-package-path:
+        description: Second path to try when autodetect is true
+        required: false
+        type: string
+        default: ''
       sonar-project-key:
         description: SonarCloud project key
         required: true
@@ -50,6 +60,23 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Resolve working directory
+        id: workdir
+        run: |
+          SLN="${{ inputs.solution-name }}"
+          if [ "${{ inputs.autodetect-working-directory }}" != "true" ]; then
+            echo "path=${{ inputs.working-directory }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -f "./${SLN}" ]; then
+            echo "path=." >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ inputs.monorepo-package-path }}" ] && [ -f "${{ inputs.monorepo-package-path }}/${SLN}" ]; then
+            echo "path=${{ inputs.monorepo-package-path }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "Error: ${SLN} not found at ./${SLN} or ${{ inputs.monorepo-package-path }}/${SLN}"
+            exit 1
+          fi
+
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -85,13 +112,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ inputs.sonar-project-key }}-${{ hashFiles(format('{0}/**/*.csproj', inputs.working-directory)) }}
+          key: ${{ runner.os }}-nuget-${{ inputs.sonar-project-key }}-${{ hashFiles(format('{0}/**/*.csproj', steps.workdir.outputs.path)) }}
           restore-keys: |
             ${{ runner.os }}-nuget-${{ inputs.sonar-project-key }}-
             ${{ runner.os }}-nuget-
 
       - name: Begin SonarCloud analysis
-        working-directory: ${{ inputs.working-directory }}
+        working-directory: ${{ steps.workdir.outputs.path }}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
@@ -106,15 +133,15 @@ jobs:
             /d:sonar.cs.vscoveragexml.reportsPaths=coverage.xml
 
       - name: Build
-        working-directory: ${{ inputs.working-directory }}
+        working-directory: ${{ steps.workdir.outputs.path }}
         run: dotnet build ${{ inputs.solution-name }} --configuration Release --no-incremental
 
       - name: Test with coverage (dotnet-coverage → VS Code Coverage XML)
-        working-directory: ${{ inputs.working-directory }}
+        working-directory: ${{ steps.workdir.outputs.path }}
         run: dotnet-coverage collect "dotnet test ${{ inputs.solution-name }} --configuration Release --no-build" -f xml -o coverage.xml
 
       - name: End SonarCloud analysis
-        working-directory: ${{ inputs.working-directory }}
+        working-directory: ${{ steps.workdir.outputs.path }}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: dotnet-sonarscanner end /d:sonar.token="${SONAR_TOKEN}"

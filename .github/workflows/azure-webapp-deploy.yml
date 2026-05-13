@@ -37,6 +37,11 @@ on:
         required: false
         type: boolean
         default: false
+      clean:
+        description: Remove extra files at destination (azure/webapps-deploy clean)
+        required: false
+        type: boolean
+        default: false
     secrets:
       AZURE_PUBLISH_PROFILE:
         description: Publish profile XML from Azure App Service
@@ -76,4 +81,5 @@ jobs:
           app-name: ${{ inputs.app-name }}
           slot-name: ${{ inputs.slot-name }}
           package: ${{ inputs.package-path }}
+          clean: ${{ inputs.clean }}
           publish-profile: ${{ secrets.AZURE_PUBLISH_PROFILE }}

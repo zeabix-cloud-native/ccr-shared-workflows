@@ -106,7 +106,9 @@ jobs:
 | Input | Required | Default | Description |
 | --- | --- | --- | --- |
 | `solution-name` | yes | — | Filename of the `.sln` (e.g. `BookingService.sln`) |
-| `working-directory` | no | `.` | Directory where the solution lives, relative to repo root |
+| `working-directory` | no | `.` | Directory where the solution lives when autodetect is `false` |
+| `autodetect-working-directory` | no | `false` | If `true`, use repo root when the `.sln` exists there, else `monorepo-package-path` |
+| `monorepo-package-path` | no | `''` | Second path to try when autodetect is `true` (e.g. `application_service/ccr-payment-service`) |
 | `sonar-project-key` | yes | — | SonarCloud project key |
 | `sonar-organization` | yes | — | SonarCloud organization key |
 | `sonar-project-name` | yes | — | Display name shown in SonarCloud UI |
@@ -118,7 +120,9 @@ jobs:
 | Input | Required | Default | Description |
 | --- | --- | --- | --- |
 | `solution-name` | yes | — | Filename of the `.sln` |
-| `working-directory` | no | `.` | Directory where the solution lives |
+| `working-directory` | no | `.` | Directory where the solution lives when autodetect is `false` |
+| `autodetect-working-directory` | no | `false` | If `true`, resolve `.sln` at repo root or under `monorepo-package-path` |
+| `monorepo-package-path` | no | `''` | Fallback path when autodetect is `true` |
 | `project-name` | yes | — | Dependency-Track project name (e.g. `CCR-Booking-Service-DEV`) |
 | `project-version` | no | `v1.0.0` | DT project version label |
 | `is-latest` | no | `true` | Mark this BOM as the project's "latest" |
@@ -137,7 +141,9 @@ jobs:
 | --- | --- | --- | --- |
 | `solution-name` | yes | — | `.sln` filename used for restore and test |
 | `project-name` | yes | — | `.csproj` filename used for publish |
-| `working-directory` | no | `.` | Directory containing the solution and project files |
+| `working-directory` | no | `.` | Directory containing the solution and project files when autodetect is `false` |
+| `autodetect-working-directory` | no | `false` | If `true`, resolve `.sln` at repo root or under `monorepo-package-path` |
+| `monorepo-package-path` | no | `''` | Fallback path when autodetect is `true` |
 | `configuration` | no | `Release` | Build configuration (`Debug` or `Release`) |
 | `dotnet-version` | no | `10.x` | .NET SDK to install |
 | `artifact-name` | no | `.net-app` | Name of the uploaded artifact consumed by the deploy job |
@@ -170,6 +176,7 @@ jobs:
 | `extract-tarball` | no | `false` | If `true`, run `tar -xzf` on `tarball-filename` after download (Next.js flow) |
 | `tarball-filename` | no | `deploy.tar.gz` | Tarball file inside the artifact |
 | `verify-next-standalone` | no | `false` | If `true` (and extract is `true`), list `.next/` and `cat .next/BUILD_ID` before deploy |
+| `clean` | no | `false` | If `true`, pass `clean` to `azure/webapps-deploy` (remove extra files at destination) |
 
 Secret: **`AZURE_PUBLISH_PROFILE`** — pass the publish-profile XML from a repo secret, e.g.:
 

@@ -8,10 +8,20 @@ on:
         required: true
         type: string
       working-directory:
-        description: Directory where the solution lives (relative to repo root)
+        description: Directory where the solution lives (used when autodetect is false)
         required: false
         type: string
         default: '.'
+      autodetect-working-directory:
+        description: If true, resolve solution at repo root or monorepo-package-path
+        required: false
+        type: boolean
+        default: false
+      monorepo-package-path:
+        description: Second path to try when autodetect is true
+        required: false
+        type: string
+        default: ''
       project-name:
         description: Dependency-Track project name (e.g. CCR-Booking-Service-DEV)
         required: true
@@ -82,6 +92,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Resolve working directory
+        id: workdir
+        run: |
+          SLN="${{ inputs.solution-name }}"
+          if [ "${{ inputs.autodetect-working-directory }}" != "true" ]; then
+            echo "path=${{ inputs.working-directory }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -f "./${SLN}" ]; then
+            echo "path=." >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ inputs.monorepo-package-path }}" ] && [ -f "${{ inputs.monorepo-package-path }}/${SLN}" ]; then
+            echo "path=${{ inputs.monorepo-package-path }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "Error: ${SLN} not found at ./${SLN} or ${{ inputs.monorepo-package-path }}/${SLN}"
+            exit 1
+          fi
+
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -91,13 +118,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ inputs.project-name }}-${{ hashFiles(format('{0}/**/*.csproj', inputs.working-directory)) }}
+          key: ${{ runner.os }}-nuget-${{ inputs.project-name }}-${{ hashFiles(format('{0}/**/*.csproj', steps.workdir.outputs.path)) }}
           restore-keys: |
             ${{ runner.os }}-nuget-${{ inputs.project-name }}-
             ${{ runner.os }}-nuget-
 
       - name: Restore dependencies
-        working-directory: ${{ inputs.working-directory }}
+        working-directory: ${{ steps.workdir.outputs.path }}
         run: dotnet restore ${{ inputs.solution-name }}
 
       - name: Cache CycloneDX tool
@@ -117,11 +144,11 @@ jobs:
         run: echo "${{ runner.temp }}/cyclonedx-tools" >> $GITHUB_PATH
 
       - name: Generate CycloneDX SBOM
-        working-directory: ${{ inputs.working-directory }}
+        working-directory: ${{ steps.workdir.outputs.path }}
         run: dotnet-CycloneDX ${{ inputs.solution-name }} -o . -fn bom.json -F Json -t -spv ${{ inputs.cyclonedx-spec-version }}
 
       - name: Sanity-check BOM
-        working-directory: ${{ inputs.working-directory }}
+        working-directory: ${{ steps.workdir.outputs.path }}
         run: |
           test -s bom.json || { echo "bom.json is missing or empty"; exit 1; }
           ls -la bom.json
@@ -141,7 +168,7 @@ jobs:
 
       - name: Upload BOM to Dependency-Track
         id: upload
-        working-directory: ${{ inputs.working-directory }}
+        working-directory: ${{ steps.workdir.outputs.path }}
         env:
           DT_URL: ${{ secrets.DTRACK_API_URL }}
           DT_API_KEY: ${{ secrets.DTRACK_API_KEY }}
