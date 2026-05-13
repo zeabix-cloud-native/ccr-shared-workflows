@@ -1,0 +1,54 @@
+name: Azure Web App Deploy (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      app-name:
+        description: Azure Web App name to deploy to (e.g. app-booking-wccr-nonprod-sea-01)
+        required: true
+        type: string
+      slot-name:
+        description: Deployment slot
+        required: false
+        type: string
+        default: 'Production'
+      artifact-name:
+        description: Name of the artifact uploaded by the build job
+        required: false
+        type: string
+        default: '.net-app'
+      package-path:
+        description: Path passed to azure/webapps-deploy
+        required: false
+        type: string
+        default: '.'
+      environment-name:
+        description: GitHub Environment to associate with this deploy (e.g. development, uat, production)
+        required: false
+        type: string
+        default: ''
+    secrets:
+      AZURE_PUBLISH_PROFILE:
+        description: Publish profile XML from Azure App Service
+        required: true
+
+jobs:
+  deploy:
+    name: Deploy to Azure Web App
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment-name }}
+
+    steps:
+      - name: Download artifact from build job
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name }}
+
+      - name: Deploy to Azure Web App
+        id: deploy-to-webapp
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ inputs.app-name }}
+          slot-name: ${{ inputs.slot-name }}
+          package: ${{ inputs.package-path }}
+          publish-profile: ${{ secrets.AZURE_PUBLISH_PROFILE }}

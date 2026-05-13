@@ -11,6 +11,8 @@ Centralised here so security/CI logic is defined once and consumed by every serv
 | --- | --- | --- |
 | **SonarCloud scan** | `.github/workflows/sonarqube-scan.yml` | Static analysis + coverage upload to SonarCloud |
 | **Dependency-Track scan** | `.github/workflows/dependency-track-scan.yml` | Generates a CycloneDX SBOM, uploads it to Dependency-Track, and optionally enforces severity thresholds |
+| **.NET build** | `.github/workflows/dotnet-build.yml` | Restore → test → publish → upload artifact for any .NET solution |
+| **Azure Web App deploy** | `.github/workflows/azure-webapp-deploy.yml` | Download artifact → deploy to Azure App Service |
 
 ## Setup (one-time)
 
@@ -64,6 +66,23 @@ jobs:
     secrets:
       DTRACK_API_URL: ${{ secrets.DTRACK_API_URL }}
       DTRACK_API_KEY: ${{ secrets.DTRACK_API_KEY }}
+
+  build:
+    uses: zeabix-cloud-native/ccr-shared-workflows/.github/workflows/dotnet-build.yml@v1
+    with:
+      solution-name: BookingService.sln
+      project-name: BookingService.csproj
+      cache-key-prefix: nuget-booking
+
+  deploy:
+    needs: build
+    uses: zeabix-cloud-native/ccr-shared-workflows/.github/workflows/azure-webapp-deploy.yml@v1
+    with:
+      app-name: app-booking-wccr-nonprod-sea-01
+      slot-name: Production
+      environment-name: development
+    secrets:
+      AZURE_PUBLISH_PROFILE: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_DC4831A6E0034A55BFA7F2991766196D }}
 ```
 
 ## Inputs
@@ -97,3 +116,33 @@ jobs:
 | `max-low` | no | `-1` | Fail if Low count > N. `-1` = ignore |
 | `polling-timeout-seconds` | no | `180` | Max time to wait for DT to finish processing the BOM (only when gating is on) |
 | `dotnet-version` | no | `10.x` | .NET SDK to install |
+
+### `dotnet-build.yml`
+
+| Input | Required | Default | Description |
+| --- | --- | --- | --- |
+| `solution-name` | yes | — | `.sln` filename used for restore and test |
+| `project-name` | yes | — | `.csproj` filename used for publish |
+| `working-directory` | no | `.` | Directory containing the solution and project files |
+| `configuration` | no | `Release` | Build configuration (`Debug` or `Release`) |
+| `dotnet-version` | no | `10.x` | .NET SDK to install |
+| `artifact-name` | no | `.net-app` | Name of the uploaded artifact consumed by the deploy job |
+| `run-tests` | no | `true` | Set to `false` to skip `dotnet test` |
+| `cache-key-prefix` | no | `nuget` | NuGet cache key prefix — use the service name (e.g. `nuget-booking`) to keep caches isolated per service |
+
+### `azure-webapp-deploy.yml`
+
+| Input | Required | Default | Description |
+| --- | --- | --- | --- |
+| `app-name` | yes | — | Azure Web App name (e.g. `app-booking-wccr-nonprod-sea-01`) |
+| `slot-name` | no | `Production` | Deployment slot |
+| `artifact-name` | no | `.net-app` | Name of the artifact uploaded by the build job |
+| `package-path` | no | `.` | Path passed to `azure/webapps-deploy` |
+| `environment-name` | no | `''` | GitHub Environment to bind to this deploy (e.g. `development`, `uat`, `production`). Leave empty to skip. |
+
+Secret: **`AZURE_PUBLISH_PROFILE`** — pass the publish-profile XML from a repo secret, e.g.:
+
+```yaml
+secrets:
+  AZURE_PUBLISH_PROFILE: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_XXXXXXXXXX }}
+```

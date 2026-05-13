@@ -1,0 +1,87 @@
+name: .NET Build (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      solution-name:
+        description: Filename of the .sln to restore/test, e.g. BookingService.sln
+        required: true
+        type: string
+      project-name:
+        description: Filename of the .csproj to publish, e.g. BookingService.csproj
+        required: true
+        type: string
+      working-directory:
+        description: Directory containing the solution and project files
+        required: false
+        type: string
+        default: '.'
+      configuration:
+        description: Build configuration (Debug or Release)
+        required: false
+        type: string
+        default: 'Release'
+      dotnet-version:
+        description: .NET SDK version to install
+        required: false
+        type: string
+        default: '10.x'
+      artifact-name:
+        description: Name of the uploaded artifact consumed by the deploy job
+        required: false
+        type: string
+        default: '.net-app'
+      run-tests:
+        description: Whether to run `dotnet test` before publishing
+        required: false
+        type: boolean
+        default: true
+      cache-key-prefix:
+        description: NuGet cache key prefix (use the service name to keep caches isolated)
+        required: false
+        type: string
+        default: 'nuget'
+
+jobs:
+  build:
+    name: Build and Publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-${{ inputs.cache-key-prefix }}-build-${{ hashFiles(format('{0}/**/*.csproj', inputs.working-directory)) }}
+          restore-keys: |
+            ${{ runner.os }}-${{ inputs.cache-key-prefix }}-build-
+            ${{ runner.os }}-${{ inputs.cache-key-prefix }}-
+            ${{ runner.os }}-nuget-
+
+      - name: Restore dependencies
+        working-directory: ${{ inputs.working-directory }}
+        run: dotnet restore ${{ inputs.solution-name }}
+
+      - name: Run unit tests
+        if: ${{ inputs.run-tests }}
+        working-directory: ${{ inputs.working-directory }}
+        run: dotnet test ${{ inputs.solution-name }} --configuration ${{ inputs.configuration }} --no-restore
+
+      - name: Publish
+        working-directory: ${{ inputs.working-directory }}
+        run: dotnet publish ${{ inputs.project-name }} --configuration ${{ inputs.configuration }} --no-restore --output ./publish
+
+      - name: Upload artifact for deployment job
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: ${{ inputs.working-directory }}/publish
