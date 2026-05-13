@@ -22,11 +22,21 @@ on:
         required: false
         type: string
         default: '.'
-      environment-name:
-        description: GitHub Environment to associate with this deploy (e.g. development, uat, production)
+      extract-tarball:
+        description: If true, extract tarball before deploy (Next.js standalone flow)
+        required: false
+        type: boolean
+        default: false
+      tarball-filename:
+        description: Tarball filename inside the downloaded artifact directory
         required: false
         type: string
-        default: ''
+        default: 'deploy.tar.gz'
+      verify-next-standalone:
+        description: After extract, list .next and print BUILD_ID (Next.js sanity check)
+        required: false
+        type: boolean
+        default: false
     secrets:
       AZURE_PUBLISH_PROFILE:
         description: Publish profile XML from Azure App Service
@@ -36,13 +46,28 @@ jobs:
   deploy:
     name: Deploy to Azure Web App
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment-name }}
 
     steps:
       - name: Download artifact from build job
         uses: actions/download-artifact@v4
         with:
           name: ${{ inputs.artifact-name }}
+
+      - name: Extract deployment tarball
+        if: ${{ inputs.extract-tarball }}
+        run: tar -xzf ${{ inputs.tarball-filename }}
+
+      - name: Verify Next.js standalone output
+        if: ${{ inputs.extract-tarball && inputs.verify-next-standalone }}
+        run: |
+          echo "=== Extracted files ==="
+          ls -la
+          echo ""
+          echo "=== Checking .next directory ==="
+          ls -la .next/
+          echo ""
+          echo "=== Verifying BUILD_ID ==="
+          cat .next/BUILD_ID
 
       - name: Deploy to Azure Web App
         id: deploy-to-webapp

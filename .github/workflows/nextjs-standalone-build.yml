@@ -1,0 +1,153 @@
+name: Next.js standalone build (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: Directory containing package.json (use . when the app is at repo root)
+        required: false
+        type: string
+        default: '.'
+      autodetect-working-directory:
+        description: If true, use package.json at repo root, else use monorepo-package-path
+        required: false
+        type: boolean
+        default: false
+      monorepo-package-path:
+        description: Path to the app when autodetect is true and root has no package.json
+        required: false
+        type: string
+        default: 'application_service/ccr-frontend-backoffice'
+      node-version:
+        required: false
+        type: string
+        default: '22.x'
+      npm-install-mode:
+        description: install (default) or ci (requires package-lock.json)
+        required: false
+        type: string
+        default: 'install'
+      build-command:
+        description: Shell command to produce .next (e.g. npm run build)
+        required: false
+        type: string
+        default: 'npm run build'
+      copy-public-optional:
+        description: If true, cp public to standalone ignores errors (|| true)
+        required: false
+        type: boolean
+        default: false
+      artifact-name:
+        required: false
+        type: string
+        default: 'node-app'
+      tarball-filename:
+        description: Tarball created in the resolved working directory
+        required: false
+        type: string
+        default: 'deploy.tar.gz'
+      cache-key-prefix:
+        required: false
+        type: string
+        default: 'nextjs'
+
+jobs:
+  build:
+    name: Build Next.js standalone package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine working directory
+        id: workdir
+        run: |
+          if [ "${{ inputs.autodetect-working-directory }}" = "true" ]; then
+            if [ -f "package.json" ]; then
+              echo "path=." >> "$GITHUB_OUTPUT"
+              echo "Using repo root (package.json at root)"
+            elif [ -f "${{ inputs.monorepo-package-path }}/package.json" ]; then
+              echo "path=${{ inputs.monorepo-package-path }}" >> "$GITHUB_OUTPUT"
+              echo "Using ${{ inputs.monorepo-package-path }}"
+            else
+              echo "Error: package.json not found at root or under ${{ inputs.monorepo-package-path }}"
+              exit 1
+            fi
+          else
+            if [ ! -f "${{ inputs.working-directory }}/package.json" ]; then
+              echo "Error: no package.json under ${{ inputs.working-directory }}"
+              exit 1
+            fi
+            echo "path=${{ inputs.working-directory }}" >> "$GITHUB_OUTPUT"
+            echo "Using ${{ inputs.working-directory }}"
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ inputs.cache-key-prefix }}-${{ hashFiles(format('{0}/package-lock.json', steps.workdir.outputs.path), format('{0}/package.json', steps.workdir.outputs.path)) }}
+          restore-keys: |
+            ${{ runner.os }}-npm-${{ inputs.cache-key-prefix }}-
+            ${{ runner.os }}-npm-
+
+      - name: Install dependencies
+        working-directory: ${{ steps.workdir.outputs.path }}
+        run: |
+          if [ "${{ inputs.npm-install-mode }}" = "ci" ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Build
+        working-directory: ${{ steps.workdir.outputs.path }}
+        run: |
+          ${{ inputs.build-command }}
+          ls -al
+          ls -al .next/
+          ls -al .next/standalone/
+
+      - name: Copy static assets into standalone output
+        working-directory: ${{ steps.workdir.outputs.path }}
+        run: |
+          if [ "${{ inputs.copy-public-optional }}" = "true" ]; then
+            cp -r public .next/standalone/ || true
+          else
+            cp -r public .next/standalone/
+          fi
+          cp -r .next/static .next/standalone/.next/
+
+      - name: Update package.json for standalone start script
+        working-directory: ${{ steps.workdir.outputs.path }}
+        run: |
+          cd .next/standalone
+          node -e "
+          const fs = require('fs');
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          pkg.scripts = pkg.scripts || {};
+          pkg.scripts.start = 'node server.js';
+          fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
+          "
+
+      - name: Create deployment tarball
+        working-directory: ${{ steps.workdir.outputs.path }}
+        run: |
+          cd .next/standalone
+          tar -czf "../../${{ inputs.tarball-filename }}" .
+          cd ../..
+          echo "=== Tarball created ==="
+          ls -lh "${{ inputs.tarball-filename }}"
+
+      - name: Upload artifact for deployment job
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: ${{ steps.workdir.outputs.path }}/${{ inputs.tarball-filename }}

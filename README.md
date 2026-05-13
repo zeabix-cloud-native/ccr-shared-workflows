@@ -12,7 +12,8 @@ Centralised here so security/CI logic is defined once and consumed by every serv
 | **SonarCloud scan** | `.github/workflows/sonarqube-scan.yml` | Static analysis + coverage upload to SonarCloud |
 | **Dependency-Track scan** | `.github/workflows/dependency-track-scan.yml` | Generates a CycloneDX SBOM, uploads it to Dependency-Track, and optionally enforces severity thresholds |
 | **.NET build** | `.github/workflows/dotnet-build.yml` | Restore → test → publish → upload artifact for any .NET solution |
-| **Azure Web App deploy** | `.github/workflows/azure-webapp-deploy.yml` | Download artifact → deploy to Azure App Service |
+| **Next.js standalone build** | `.github/workflows/nextjs-standalone-build.yml` | Node.js → `npm run build` → Next standalone tarball (`deploy.tar.gz`) |
+| **Azure Web App deploy** | `.github/workflows/azure-webapp-deploy.yml` | Download artifact → optional tarball extract → deploy to Azure App Service |
 
 ## Setup (one-time)
 
@@ -80,9 +81,22 @@ jobs:
     with:
       app-name: app-booking-wccr-nonprod-sea-01
       slot-name: Production
-      environment-name: development
     secrets:
       AZURE_PUBLISH_PROFILE: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_DC4831A6E0034A55BFA7F2991766196D }}
+
+  # Next.js example (tarball artifact):
+  # deploy:
+  #   needs: build
+  #   uses: zeabix-cloud-native/ccr-shared-workflows/.github/workflows/azure-webapp-deploy.yml@v1
+  #   with:
+  #     app-name: app-fe-user-wccr-nonprod-sea-01
+  #     artifact-name: node-app
+  #     extract-tarball: true
+  #     tarball-filename: deploy.tar.gz
+  #     verify-next-standalone: true
+  #   secrets:
+  #     AZURE_PUBLISH_PROFILE: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_XXX }}
+
 ```
 
 ## Inputs
@@ -130,6 +144,21 @@ jobs:
 | `run-tests` | no | `true` | Set to `false` to skip `dotnet test` |
 | `cache-key-prefix` | no | `nuget` | NuGet cache key prefix — use the service name (e.g. `nuget-booking`) to keep caches isolated per service |
 
+### `nextjs-standalone-build.yml`
+
+| Input | Required | Default | Description |
+| --- | --- | --- | --- |
+| `working-directory` | no | `.` | Directory containing `package.json` when `autodetect-working-directory` is `false` |
+| `autodetect-working-directory` | no | `false` | If `true`, use root `package.json` or `monorepo-package-path` |
+| `monorepo-package-path` | no | `application_service/ccr-frontend-backoffice` | Fallback app path when autodetecting |
+| `node-version` | no | `22.x` | Node.js version |
+| `npm-install-mode` | no | `install` | `install` or `ci` |
+| `build-command` | no | `npm run build` | Command that produces `.next/standalone` |
+| `copy-public-optional` | no | `false` | If `true`, `cp public` uses `\|\| true` (missing `public` folder) |
+| `artifact-name` | no | `node-app` | Uploaded artifact name |
+| `tarball-filename` | no | `deploy.tar.gz` | Tarball written in the resolved working directory |
+| `cache-key-prefix` | no | `nextjs` | Prefix for the npm cache key |
+
 ### `azure-webapp-deploy.yml`
 
 | Input | Required | Default | Description |
@@ -138,7 +167,9 @@ jobs:
 | `slot-name` | no | `Production` | Deployment slot |
 | `artifact-name` | no | `.net-app` | Name of the artifact uploaded by the build job |
 | `package-path` | no | `.` | Path passed to `azure/webapps-deploy` |
-| `environment-name` | no | `''` | GitHub Environment to bind to this deploy (e.g. `development`, `uat`, `production`). Leave empty to skip. |
+| `extract-tarball` | no | `false` | If `true`, run `tar -xzf` on `tarball-filename` after download (Next.js flow) |
+| `tarball-filename` | no | `deploy.tar.gz` | Tarball file inside the artifact |
+| `verify-next-standalone` | no | `false` | If `true` (and extract is `true`), list `.next/` and `cat .next/BUILD_ID` before deploy |
 
 Secret: **`AZURE_PUBLISH_PROFILE`** — pass the publish-profile XML from a repo secret, e.g.:
 
