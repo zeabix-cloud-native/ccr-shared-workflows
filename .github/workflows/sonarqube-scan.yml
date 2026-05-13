@@ -1,0 +1,120 @@
+name: SonarCloud Scan (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      solution-name:
+        description: Filename of the .sln, e.g. BookingService.sln
+        required: true
+        type: string
+      working-directory:
+        description: Directory where the solution lives (relative to repo root)
+        required: false
+        type: string
+        default: '.'
+      sonar-project-key:
+        description: SonarCloud project key
+        required: true
+        type: string
+      sonar-organization:
+        description: SonarCloud organization key
+        required: true
+        type: string
+      sonar-project-name:
+        description: Display name shown in SonarCloud UI
+        required: true
+        type: string
+      sonar-host-url:
+        description: Override only for self-hosted SonarQube
+        required: false
+        type: string
+        default: 'https://sonarcloud.io'
+      dotnet-version:
+        description: .NET SDK version to install
+        required: false
+        type: string
+        default: '10.x'
+    secrets:
+      SONAR_TOKEN:
+        required: true
+
+jobs:
+  sonarqube:
+    name: SonarCloud Scan (SAST + Coverage)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+
+      - name: Cache SonarCloud packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar-${{ inputs.sonar-project-key }}
+          restore-keys: |
+            ${{ runner.os }}-sonar-${{ inputs.sonar-project-key }}-
+            ${{ runner.os }}-sonar-
+
+      - name: Cache SonarScanner and dotnet-coverage
+        id: cache-sonar-tools
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/dotnet-sonar-tools
+          key: ${{ runner.os }}-dotnet-sonar-tools-v1
+
+      - name: Install SonarScanner and dotnet-coverage
+        if: steps.cache-sonar-tools.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "${{ runner.temp }}/dotnet-sonar-tools"
+          dotnet tool install dotnet-sonarscanner --tool-path "${{ runner.temp }}/dotnet-sonar-tools"
+          dotnet tool install dotnet-coverage    --tool-path "${{ runner.temp }}/dotnet-sonar-tools"
+
+      - name: Add analysis tools to PATH
+        run: echo "${{ runner.temp }}/dotnet-sonar-tools" >> $GITHUB_PATH
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ inputs.sonar-project-key }}-${{ hashFiles(format('{0}/**/*.csproj', inputs.working-directory)) }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-${{ inputs.sonar-project-key }}-
+            ${{ runner.os }}-nuget-
+
+      - name: Begin SonarCloud analysis
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          dotnet-sonarscanner begin \
+            /k:"${{ inputs.sonar-project-key }}" \
+            /o:"${{ inputs.sonar-organization }}" \
+            /n:"${{ inputs.sonar-project-name }}" \
+            /v:"${GITHUB_SHA}" \
+            /d:sonar.host.url="${{ inputs.sonar-host-url }}" \
+            /d:sonar.token="${SONAR_TOKEN}" \
+            /d:sonar.branch.name="${GITHUB_REF_NAME}" \
+            /d:sonar.cs.vscoveragexml.reportsPaths=coverage.xml
+
+      - name: Build
+        working-directory: ${{ inputs.working-directory }}
+        run: dotnet build ${{ inputs.solution-name }} --configuration Release --no-incremental
+
+      - name: Test with coverage (dotnet-coverage → VS Code Coverage XML)
+        working-directory: ${{ inputs.working-directory }}
+        run: dotnet-coverage collect "dotnet test ${{ inputs.solution-name }} --configuration Release --no-build" -f xml -o coverage.xml
+
+      - name: End SonarCloud analysis
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: dotnet-sonarscanner end /d:sonar.token="${SONAR_TOKEN}"
