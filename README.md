@@ -11,6 +11,7 @@ Centralised here so security/CI logic is defined once and consumed by every serv
 | --- | --- | --- |
 | **SonarCloud scan** | `.github/workflows/sonarqube-scan.yml` | Static analysis + coverage upload to SonarCloud |
 | **Dependency-Track scan** | `.github/workflows/dependency-track-scan.yml` | Generates a CycloneDX SBOM, uploads it to Dependency-Track, and optionally enforces severity thresholds |
+| **Dependency-Track (npm)** | `.github/workflows/dependency-track-npm-scan.yml` | Same as above for Node/npm apps via `@cyclonedx/cyclonedx-npm` |
 | **.NET build** | `.github/workflows/dotnet-build.yml` | Restore → test → publish → upload artifact for any .NET solution |
 | **Next.js standalone build** | `.github/workflows/nextjs-standalone-build.yml` | Node.js → `npm run build` → Next standalone tarball (`deploy.tar.gz`) |
 | **Azure Web App deploy** | `.github/workflows/azure-webapp-deploy.yml` | Download artifact → optional tarball extract → deploy to Azure App Service |
@@ -34,8 +35,8 @@ Centralised here so security/CI logic is defined once and consumed by every serv
 | Secret | Used by | Notes |
 | --- | --- | --- |
 | `SONAR_TOKEN` | sonarqube-scan | SonarCloud user/analysis token |
-| `DTRACK_API_URL` | dependency-track-scan | Base URL of the Dependency-Track **API server** (not the UI) |
-| `DTRACK_API_KEY` | dependency-track-scan | DT team API key with `BOM_UPLOAD`, `PROJECT_CREATION_UPLOAD`, `VIEW_PORTFOLIO`, `VIEW_VULNERABILITY` |
+| `DTRACK_API_URL` | dependency-track-scan, dependency-track-npm-scan | Base URL of the Dependency-Track **API server** (not the UI) |
+| `DTRACK_API_KEY` | dependency-track-scan, dependency-track-npm-scan | DT team API key with `BOM_UPLOAD`, `PROJECT_CREATION_UPLOAD`, `VIEW_PORTFOLIO`, `VIEW_VULNERABILITY` |
 
 ## Calling these workflows
 
@@ -134,6 +135,28 @@ jobs:
 | `max-low` | no | `-1` | Fail if Low count > N. `-1` = ignore |
 | `polling-timeout-seconds` | no | `180` | Max time to wait for DT to finish processing the BOM (only when gating is on) |
 | `dotnet-version` | no | `10.x` | .NET SDK to install |
+
+### `dependency-track-npm-scan.yml`
+
+| Input | Required | Default | Description |
+| --- | --- | --- | --- |
+| `working-directory` | no | `.` | Directory with `package.json` when autodetect is `false` |
+| `autodetect-working-directory` | no | `false` | If `true`, resolve `package.json` at repo root or under `monorepo-package-path` |
+| `monorepo-package-path` | no | `application_service/ccr-frontend-user` | Fallback app path when autodetecting |
+| `node-version` | no | `22.x` | Node.js version |
+| `npm-install-mode` | no | `ci` | `ci` (needs lockfile) or `install` |
+| `cache-key-prefix` | no | `dtrack-npm` | npm cache key prefix |
+| `project-name` | yes | — | Dependency-Track project name (e.g. `CCR-FE-User-UAT`) |
+| `project-version` | no | `v1.0.0` | DT project version label |
+| `is-latest` | no | `true` | Mark this BOM as the project's "latest" |
+| `auto-create` | no | `true` | Create the DT project if it doesn't exist |
+| `cyclonedx-spec-version` | no | `1.6` | CycloneDX spec (DT 4.13 supports up to 1.6) |
+| `cyclonedx-npm-version` | no | `2` | Semver range for `@cyclonedx/cyclonedx-npm` (e.g. `2` or `2.7.0`) |
+| `max-critical` | no | `-1` | Fail if Critical count > N. `-1` = ignore |
+| `max-high` | no | `-1` | Fail if High count > N. `-1` = ignore |
+| `max-medium` | no | `-1` | Fail if Medium count > N. `-1` = ignore |
+| `max-low` | no | `-1` | Fail if Low count > N. `-1` = ignore |
+| `polling-timeout-seconds` | no | `180` | Max wait for DT processing when gating is on |
 
 ### `dotnet-build.yml`
 

@@ -1,0 +1,270 @@
+name: Dependency-Track Scan — npm / CycloneDX (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: Directory containing package.json (when autodetect is false)
+        required: false
+        type: string
+        default: '.'
+      autodetect-working-directory:
+        description: If true, use package.json at repo root, else monorepo-package-path
+        required: false
+        type: boolean
+        default: false
+      monorepo-package-path:
+        description: Path to the app when autodetect is true and root has no package.json
+        required: false
+        type: string
+        default: 'application_service/ccr-frontend-user'
+      node-version:
+        required: false
+        type: string
+        default: '22.x'
+      npm-install-mode:
+        description: install or ci (ci requires package-lock.json)
+        required: false
+        type: string
+        default: 'ci'
+      cache-key-prefix:
+        description: Prefix for npm cache key
+        required: false
+        type: string
+        default: 'dtrack-npm'
+      project-name:
+        description: Dependency-Track project name (e.g. CCR-FE-User-UAT)
+        required: true
+        type: string
+      project-version:
+        description: DT project version label
+        required: false
+        type: string
+        default: 'v1.0.0'
+      is-latest:
+        required: false
+        type: boolean
+        default: true
+      auto-create:
+        required: false
+        type: boolean
+        default: true
+      cyclonedx-spec-version:
+        description: CycloneDX spec version (DT 4.13 supports up to 1.6)
+        required: false
+        type: string
+        default: '1.6'
+      cyclonedx-npm-version:
+        description: Pin @cyclonedx/cyclonedx-npm semver range (e.g. 2 or 2.7.0)
+        required: false
+        type: string
+        default: '2'
+      max-critical:
+        required: false
+        type: number
+        default: -1
+      max-high:
+        required: false
+        type: number
+        default: -1
+      max-medium:
+        required: false
+        type: number
+        default: -1
+      max-low:
+        required: false
+        type: number
+        default: -1
+      polling-timeout-seconds:
+        required: false
+        type: number
+        default: 180
+    secrets:
+      DTRACK_API_URL:
+        required: true
+      DTRACK_API_KEY:
+        required: true
+
+jobs:
+  dependency-track:
+    name: Dependency-Track Scan (npm SCA)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine working directory
+        id: workdir
+        run: |
+          if [ "${{ inputs.autodetect-working-directory }}" = "true" ]; then
+            if [ -f "package.json" ]; then
+              echo "path=." >> "$GITHUB_OUTPUT"
+              echo "Using repo root (package.json at root)"
+            elif [ -f "${{ inputs.monorepo-package-path }}/package.json" ]; then
+              echo "path=${{ inputs.monorepo-package-path }}" >> "$GITHUB_OUTPUT"
+              echo "Using ${{ inputs.monorepo-package-path }}"
+            else
+              echo "Error: package.json not found at root or under ${{ inputs.monorepo-package-path }}"
+              exit 1
+            fi
+          else
+            if [ ! -f "${{ inputs.working-directory }}/package.json" ]; then
+              echo "Error: no package.json under ${{ inputs.working-directory }}"
+              exit 1
+            fi
+            echo "path=${{ inputs.working-directory }}" >> "$GITHUB_OUTPUT"
+            echo "Using ${{ inputs.working-directory }}"
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ inputs.cache-key-prefix }}-${{ hashFiles(format('{0}/package-lock.json', steps.workdir.outputs.path), format('{0}/package.json', steps.workdir.outputs.path)) }}
+          restore-keys: |
+            ${{ runner.os }}-npm-${{ inputs.cache-key-prefix }}-
+            ${{ runner.os }}-npm-
+
+      - name: Install dependencies
+        working-directory: ${{ steps.workdir.outputs.path }}
+        run: |
+          if [ "${{ inputs.npm-install-mode }}" = "ci" ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Generate CycloneDX SBOM (npm)
+        working-directory: ${{ steps.workdir.outputs.path }}
+        run: |
+          npx --yes "@cyclonedx/cyclonedx-npm@${{ inputs.cyclonedx-npm-version }}" \
+            --output-format JSON \
+            --output-file bom.json \
+            --spec-version "${{ inputs.cyclonedx-spec-version }}"
+
+      - name: Sanity-check BOM
+        working-directory: ${{ steps.workdir.outputs.path }}
+        run: |
+          test -s bom.json || { echo "bom.json is missing or empty"; exit 1; }
+          ls -la bom.json
+          head -c 400 bom.json && echo
+
+      - name: Health check Dependency-Track API
+        env:
+          DT_URL: ${{ secrets.DTRACK_API_URL }}
+        run: |
+          if [ -z "${DT_URL}" ]; then
+            echo "DTRACK_API_URL is not set."
+            exit 1
+          fi
+          echo "Probing ${DT_URL}/api/version ..."
+          curl -fsS --max-time 15 "${DT_URL}/api/version"
+          echo
+
+      - name: Upload BOM to Dependency-Track
+        id: upload
+        working-directory: ${{ steps.workdir.outputs.path }}
+        env:
+          DT_URL: ${{ secrets.DTRACK_API_URL }}
+          DT_API_KEY: ${{ secrets.DTRACK_API_KEY }}
+          DT_PROJECT_NAME: ${{ inputs.project-name }}
+          DT_PROJECT_VERSION: ${{ inputs.project-version }}
+          DT_AUTO_CREATE: ${{ inputs.auto-create }}
+          DT_IS_LATEST: ${{ inputs.is-latest }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DT_URL}" ] || [ -z "${DT_API_KEY}" ]; then
+            echo "DTRACK_API_URL and DTRACK_API_KEY must be set as repository secrets."
+            exit 1
+          fi
+          response_file=$(mktemp)
+          http_code=$(curl -sS -o "$response_file" -w '%{http_code}' \
+            -X POST "${DT_URL}/api/v1/bom" \
+            -H "X-Api-Key: ${DT_API_KEY}" \
+            -F "autoCreate=${DT_AUTO_CREATE}" \
+            -F "projectName=${DT_PROJECT_NAME}" \
+            -F "projectVersion=${DT_PROJECT_VERSION}" \
+            -F "isLatest=${DT_IS_LATEST}" \
+            -F "bom=@bom.json")
+          echo "HTTP ${http_code}"
+          echo "--- Dependency-Track response ---"
+          cat "$response_file"
+          echo
+          echo "---------------------------------"
+          if [ "${http_code}" != "200" ]; then
+            rm -f "${response_file}"
+            exit 1
+          fi
+          token=$(jq -r .token < "${response_file}")
+          rm -f "${response_file}"
+          echo "token=${token}" >> "${GITHUB_OUTPUT}"
+
+      - name: Enforce severity thresholds
+        if: inputs.max-critical != -1 || inputs.max-high != -1 || inputs.max-medium != -1 || inputs.max-low != -1
+        env:
+          DT_URL: ${{ secrets.DTRACK_API_URL }}
+          DT_API_KEY: ${{ secrets.DTRACK_API_KEY }}
+          DT_PROJECT_NAME: ${{ inputs.project-name }}
+          DT_PROJECT_VERSION: ${{ inputs.project-version }}
+          DT_TOKEN: ${{ steps.upload.outputs.token }}
+          POLL_TIMEOUT: ${{ inputs.polling-timeout-seconds }}
+          MAX_CRITICAL: ${{ inputs.max-critical }}
+          MAX_HIGH: ${{ inputs.max-high }}
+          MAX_MEDIUM: ${{ inputs.max-medium }}
+          MAX_LOW: ${{ inputs.max-low }}
+        run: |
+          set -euo pipefail
+
+          echo "==> Waiting for Dependency-Track to finish processing the BOM (timeout: ${POLL_TIMEOUT}s)"
+          deadline=$(( $(date +%s) + POLL_TIMEOUT ))
+          while :; do
+            processing=$(curl -sS -H "X-Api-Key: ${DT_API_KEY}" \
+              "${DT_URL}/api/v1/bom/token/${DT_TOKEN}" | jq -r .processing)
+            if [ "${processing}" = "false" ]; then
+              echo "Processing complete."
+              break
+            fi
+            if [ "$(date +%s)" -ge "${deadline}" ]; then
+              echo "Timed out after ${POLL_TIMEOUT}s waiting for DT to process the BOM."
+              exit 1
+            fi
+            sleep 5
+          done
+
+          echo "==> Looking up project UUID"
+          uuid=$(curl -sS -H "X-Api-Key: ${DT_API_KEY}" \
+            --get \
+            --data-urlencode "name=${DT_PROJECT_NAME}" \
+            --data-urlencode "version=${DT_PROJECT_VERSION}" \
+            "${DT_URL}/api/v1/project/lookup" | jq -r .uuid)
+          echo "Project UUID: ${uuid}"
+
+          echo "==> Fetching current metrics"
+          metrics=$(curl -sS -H "X-Api-Key: ${DT_API_KEY}" \
+            "${DT_URL}/api/v1/metrics/project/${uuid}/current")
+          echo "${metrics}" | jq '{critical, high, medium, low, unassigned, vulnerabilities, components, policyViolationsFail}'
+
+          crit=$(echo "${metrics}" | jq -r '.critical // 0')
+          high=$(echo "${metrics}" | jq -r '.high // 0')
+          med=$(echo  "${metrics}" | jq -r '.medium // 0')
+          low=$(echo  "${metrics}" | jq -r '.low // 0')
+
+          echo "Severity counts — Critical:${crit} High:${high} Medium:${med} Low:${low}"
+          echo "Thresholds       — Critical<=${MAX_CRITICAL} High<=${MAX_HIGH} Medium<=${MAX_MEDIUM} Low<=${MAX_LOW} (-1 = ignore)"
+
+          fail=0
+          [ "${MAX_CRITICAL}" -ge 0 ] && [ "${crit}" -gt "${MAX_CRITICAL}" ] && { echo "Critical exceeds threshold"; fail=1; }
+          [ "${MAX_HIGH}"     -ge 0 ] && [ "${high}" -gt "${MAX_HIGH}" ]     && { echo "High exceeds threshold";     fail=1; }
+          [ "${MAX_MEDIUM}"   -ge 0 ] && [ "${med}"  -gt "${MAX_MEDIUM}" ]   && { echo "Medium exceeds threshold";   fail=1; }
+          [ "${MAX_LOW}"      -ge 0 ] && [ "${low}"  -gt "${MAX_LOW}" ]      && { echo "Low exceeds threshold";      fail=1; }
+          if [ "${fail}" -eq 0 ]; then
+            echo "All severity thresholds passed."
+          fi
+          exit ${fail}
