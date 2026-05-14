@@ -59,6 +59,18 @@ on:
         required: false
         type: string
         default: '2'
+      package-lock-only:
+        description: >
+          If true, SBOM from lockfile only (smaller payload; avoids reverse-proxy 413 on large apps).
+          Skips npm install. Requires package-lock.json or npm-shrinkwrap.json.
+        required: false
+        type: boolean
+        default: true
+      omit-dev-dependencies:
+        description: If true, pass --omit dev to cyclonedx-npm (smaller BOM; production-oriented)
+        required: false
+        type: boolean
+        default: false
       max-critical:
         required: false
         type: number
@@ -132,7 +144,17 @@ jobs:
             ${{ runner.os }}-npm-${{ inputs.cache-key-prefix }}-
             ${{ runner.os }}-npm-
 
+      - name: Require lockfile for package-lock-only SBOM
+        if: ${{ inputs.package-lock-only }}
+        working-directory: ${{ steps.workdir.outputs.path }}
+        run: |
+          if [ ! -f package-lock.json ] && [ ! -f npm-shrinkwrap.json ]; then
+            echo "package-lock-only=true requires package-lock.json or npm-shrinkwrap.json in the app directory."
+            exit 1
+          fi
+
       - name: Install dependencies
+        if: ${{ !inputs.package-lock-only }}
         working-directory: ${{ steps.workdir.outputs.path }}
         run: |
           if [ "${{ inputs.npm-install-mode }}" = "ci" ]; then
@@ -144,16 +166,26 @@ jobs:
       - name: Generate CycloneDX SBOM (npm)
         working-directory: ${{ steps.workdir.outputs.path }}
         run: |
-          npx --yes "@cyclonedx/cyclonedx-npm@${{ inputs.cyclonedx-npm-version }}" \
-            --output-format JSON \
-            --output-file bom.json \
-            --spec-version "${{ inputs.cyclonedx-spec-version }}"
+          set -euo pipefail
+          CMD=(npx --yes "@cyclonedx/cyclonedx-npm@${{ inputs.cyclonedx-npm-version }}"
+            --output-format JSON
+            --output-file bom.json
+            --spec-version "${{ inputs.cyclonedx-spec-version }}")
+          if [ "${{ inputs.package-lock-only }}" = "true" ]; then
+            CMD+=(--package-lock-only)
+            CMD+=(--ignore-npm-errors)
+          fi
+          if [ "${{ inputs.omit-dev-dependencies }}" = "true" ]; then
+            CMD+=(--omit dev)
+          fi
+          "${CMD[@]}"
 
       - name: Sanity-check BOM
         working-directory: ${{ steps.workdir.outputs.path }}
         run: |
           test -s bom.json || { echo "bom.json is missing or empty"; exit 1; }
           ls -la bom.json
+          echo "BOM size (bytes): $(wc -c < bom.json)"
           head -c 400 bom.json && echo
 
       - name: Health check Dependency-Track API

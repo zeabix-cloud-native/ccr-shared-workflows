@@ -152,6 +152,8 @@ jobs:
 | `auto-create` | no | `true` | Create the DT project if it doesn't exist |
 | `cyclonedx-spec-version` | no | `1.6` | CycloneDX spec (DT 4.13 supports up to 1.6) |
 | `cyclonedx-npm-version` | no | `2` | Semver range for `@cyclonedx/cyclonedx-npm` (e.g. `2` or `2.7.0`) |
+| `package-lock-only` | no | `true` | Lockfile-based SBOM (much smaller upload; avoids common nginx **413**). Skips `npm install` / `npm ci`. Adds `--ignore-npm-errors` with this mode. Requires `package-lock.json` or `npm-shrinkwrap.json`. Set `false` for full `node_modules` SBOM (may need a larger API upload limit). |
+| `omit-dev-dependencies` | no | `false` | If `true`, adds `--omit dev` for a smaller production-oriented BOM |
 | `max-critical` | no | `-1` | Fail if Critical count > N. `-1` = ignore |
 | `max-high` | no | `-1` | Fail if High count > N. `-1` = ignore |
 | `max-medium` | no | `-1` | Fail if Medium count > N. `-1` = ignore |
