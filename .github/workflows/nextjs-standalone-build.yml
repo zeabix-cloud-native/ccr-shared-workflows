@@ -50,6 +50,31 @@ on:
         required: false
         type: string
         default: 'nextjs'
+      next-public-base-url:
+        description: 'NEXT_PUBLIC_BASE_URL for the Next.js build (caller can pass e.g. vars.NEXT_PUBLIC_BASE_URL)'
+        required: false
+        type: string
+        default: ''
+      next-public-omise-public-key:
+        description: NEXT_PUBLIC_OMISE_PUBLIC_KEY for the Next.js build
+        required: false
+        type: string
+        default: ''
+      next-public-turnstile-site-key:
+        description: NEXT_PUBLIC_TURNSTILE_SITE_KEY for the Next.js build
+        required: false
+        type: string
+        default: ''
+    secrets:
+      NEXT_PUBLIC_BASE_URL:
+        description: Overrides next-public-base-url when set (optional)
+        required: false
+      NEXT_PUBLIC_OMISE_PUBLIC_KEY:
+        description: Overrides next-public-omise-public-key when set (optional)
+        required: false
+      NEXT_PUBLIC_TURNSTILE_SITE_KEY:
+        description: Overrides next-public-turnstile-site-key when set (optional)
+        required: false
 
 jobs:
   build:
@@ -109,6 +134,10 @@ jobs:
 
       - name: Build
         working-directory: ${{ steps.workdir.outputs.path }}
+        env:
+          NEXT_PUBLIC_BASE_URL: ${{ secrets.NEXT_PUBLIC_BASE_URL || inputs.next-public-base-url }}
+          NEXT_PUBLIC_OMISE_PUBLIC_KEY: ${{ secrets.NEXT_PUBLIC_OMISE_PUBLIC_KEY || inputs.next-public-omise-public-key }}
+          NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ secrets.NEXT_PUBLIC_TURNSTILE_SITE_KEY || inputs.next-public-turnstile-site-key }}
         run: |
           ${{ inputs.build-command }}
           ls -al

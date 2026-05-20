@@ -189,6 +189,11 @@ jobs:
 | `artifact-name` | no | `node-app` | Uploaded artifact name |
 | `tarball-filename` | no | `deploy.tar.gz` | Tarball written in the resolved working directory |
 | `cache-key-prefix` | no | `nextjs` | Prefix for the npm cache key |
+| `next-public-base-url` | no | `''` | `NEXT_PUBLIC_BASE_URL` during `npm run build` |
+| `next-public-omise-public-key` | no | `''` | `NEXT_PUBLIC_OMISE_PUBLIC_KEY` during build |
+| `next-public-turnstile-site-key` | no | `''` | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` during build |
+
+Optional **secrets** (same names as env vars) override the matching `with` input when non-empty: `NEXT_PUBLIC_BASE_URL`, `NEXT_PUBLIC_OMISE_PUBLIC_KEY`, `NEXT_PUBLIC_TURNSTILE_SITE_KEY`. Pass repo/org variables from the caller with `with: next-public-base-url: ${{ vars.NEXT_PUBLIC_BASE_URL }}`, or map GitHub Environment variables via a small `runs-on` job that has `environment:` and passes values into `with` / `secrets`.
 
 ### `azure-webapp-deploy.yml`
 
