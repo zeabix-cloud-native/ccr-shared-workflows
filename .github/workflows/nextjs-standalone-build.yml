@@ -50,34 +50,44 @@ on:
         required: false
         type: string
         default: 'nextjs'
+      # When set (e.g. "development"), the build job attaches this GitHub Environment on the
+      # caller repo and reads NEXT_PUBLIC_* from vars/secrets like a normal Vite/Node build job.
+      # When empty, use next-public-* inputs / optional workflow_call secrets instead.
+      github-environment:
+        description: Caller-repo GitHub Environment name for the build job (optional; empty = use inputs/secrets only)
+        required: false
+        type: string
+        default: ''
       next-public-base-url:
-        description: 'NEXT_PUBLIC_BASE_URL for the Next.js build (caller can pass e.g. vars.NEXT_PUBLIC_BASE_URL)'
+        description: 'NEXT_PUBLIC_BASE_URL when github-environment is empty (caller can pass vars.*)'
         required: false
         type: string
         default: ''
       next-public-omise-public-key:
-        description: NEXT_PUBLIC_OMISE_PUBLIC_KEY for the Next.js build
+        description: NEXT_PUBLIC_OMISE_PUBLIC_KEY when github-environment is empty
         required: false
         type: string
         default: ''
       next-public-turnstile-site-key:
-        description: NEXT_PUBLIC_TURNSTILE_SITE_KEY for the Next.js build
+        description: NEXT_PUBLIC_TURNSTILE_SITE_KEY when github-environment is empty
         required: false
         type: string
         default: ''
     secrets:
       NEXT_PUBLIC_BASE_URL:
-        description: Overrides next-public-base-url when set (optional)
+        description: Overrides next-public-base-url when github-environment is empty (optional)
         required: false
       NEXT_PUBLIC_OMISE_PUBLIC_KEY:
-        description: Overrides next-public-omise-public-key when set (optional)
+        description: Overrides next-public-omise-public-key when github-environment is empty (optional)
         required: false
       NEXT_PUBLIC_TURNSTILE_SITE_KEY:
-        description: Overrides next-public-turnstile-site-key when set (optional)
+        description: Overrides next-public-turnstile-site-key when github-environment is empty (optional)
         required: false
 
 jobs:
+  # --- Build without GitHub Environment (inputs + optional workflow_call secrets) ---
   build:
+    if: ${{ inputs.github-environment == '' }}
     name: Build Next.js standalone package
     runs-on: ubuntu-latest
     permissions:
@@ -138,6 +148,115 @@ jobs:
           NEXT_PUBLIC_BASE_URL: ${{ secrets.NEXT_PUBLIC_BASE_URL || inputs.next-public-base-url }}
           NEXT_PUBLIC_OMISE_PUBLIC_KEY: ${{ secrets.NEXT_PUBLIC_OMISE_PUBLIC_KEY || inputs.next-public-omise-public-key }}
           NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ secrets.NEXT_PUBLIC_TURNSTILE_SITE_KEY || inputs.next-public-turnstile-site-key }}
+        run: |
+          ${{ inputs.build-command }}
+          ls -al
+          ls -al .next/
+          ls -al .next/standalone/
+
+      - name: Copy static assets into standalone output
+        working-directory: ${{ steps.workdir.outputs.path }}
+        run: |
+          if [ "${{ inputs.copy-public-optional }}" = "true" ]; then
+            cp -r public .next/standalone/ || true
+          else
+            cp -r public .next/standalone/
+          fi
+          cp -r .next/static .next/standalone/.next/
+
+      - name: Update package.json for standalone start script
+        working-directory: ${{ steps.workdir.outputs.path }}
+        run: |
+          cd .next/standalone
+          node -e "
+          const fs = require('fs');
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          pkg.scripts = pkg.scripts || {};
+          pkg.scripts.start = 'node server.js';
+          fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
+          "
+
+      - name: Create deployment tarball
+        working-directory: ${{ steps.workdir.outputs.path }}
+        run: |
+          cd .next/standalone
+          tar -czf "../../${{ inputs.tarball-filename }}" .
+          cd ../..
+          echo "=== Tarball created ==="
+          ls -lh "${{ inputs.tarball-filename }}"
+
+      - name: Upload artifact for deployment job
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: ${{ steps.workdir.outputs.path }}/${{ inputs.tarball-filename }}
+
+  # --- Same build, but job has environment: → vars/secrets from that GitHub Environment (Vite-style) ---
+  build-with-github-environment:
+    if: ${{ inputs.github-environment != '' }}
+    name: Build Next.js standalone package (GitHub Environment)
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.github-environment }}
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine working directory
+        id: workdir
+        run: |
+          if [ "${{ inputs.autodetect-working-directory }}" = "true" ]; then
+            if [ -f "package.json" ]; then
+              echo "path=." >> "$GITHUB_OUTPUT"
+              echo "Using repo root (package.json at root)"
+            elif [ -f "${{ inputs.monorepo-package-path }}/package.json" ]; then
+              echo "path=${{ inputs.monorepo-package-path }}" >> "$GITHUB_OUTPUT"
+              echo "Using ${{ inputs.monorepo-package-path }}"
+            else
+              echo "Error: package.json not found at root or under ${{ inputs.monorepo-package-path }}"
+              exit 1
+            fi
+          else
+            if [ ! -f "${{ inputs.working-directory }}/package.json" ]; then
+              echo "Error: no package.json under ${{ inputs.working-directory }}"
+              exit 1
+            fi
+            echo "path=${{ inputs.working-directory }}" >> "$GITHUB_OUTPUT"
+            echo "Using ${{ inputs.working-directory }}"
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ inputs.cache-key-prefix }}-${{ hashFiles(format('{0}/package-lock.json', steps.workdir.outputs.path), format('{0}/package.json', steps.workdir.outputs.path)) }}
+          restore-keys: |
+            ${{ runner.os }}-npm-${{ inputs.cache-key-prefix }}-
+            ${{ runner.os }}-npm-
+
+      - name: Install dependencies
+        working-directory: ${{ steps.workdir.outputs.path }}
+        run: |
+          if [ "${{ inputs.npm-install-mode }}" = "ci" ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Build
+        working-directory: ${{ steps.workdir.outputs.path }}
+        env:
+          NEXT_PUBLIC_BASE_URL: ${{ secrets.NEXT_PUBLIC_BASE_URL || vars.NEXT_PUBLIC_BASE_URL }}
+          NEXT_PUBLIC_OMISE_PUBLIC_KEY: ${{ secrets.NEXT_PUBLIC_OMISE_PUBLIC_KEY || vars.NEXT_PUBLIC_OMISE_PUBLIC_KEY }}
+          NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ secrets.NEXT_PUBLIC_TURNSTILE_SITE_KEY || vars.NEXT_PUBLIC_TURNSTILE_SITE_KEY }}
+          TURNSTILE_SITE_KEY: ${{ secrets.TURNSTILE_SITE_KEY || vars.TURNSTILE_SITE_KEY }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
         run: |
           ${{ inputs.build-command }}
           ls -al

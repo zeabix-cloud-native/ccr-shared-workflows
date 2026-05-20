@@ -189,11 +189,12 @@ jobs:
 | `artifact-name` | no | `node-app` | Uploaded artifact name |
 | `tarball-filename` | no | `deploy.tar.gz` | Tarball written in the resolved working directory |
 | `cache-key-prefix` | no | `nextjs` | Prefix for the npm cache key |
+| `github-environment` | no | `''` | When non-empty, the build job uses `environment: <name>` on the **caller** repo and sets build `env` from `vars` / `secrets` (Vite-style). When empty, use `next-public-*` inputs / optional `secrets` below. |
 | `next-public-base-url` | no | `''` | `NEXT_PUBLIC_BASE_URL` during `npm run build` |
 | `next-public-omise-public-key` | no | `''` | `NEXT_PUBLIC_OMISE_PUBLIC_KEY` during build |
 | `next-public-turnstile-site-key` | no | `''` | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` during build |
 
-Optional **secrets** (same names as env vars) override the matching `with` input when non-empty: `NEXT_PUBLIC_BASE_URL`, `NEXT_PUBLIC_OMISE_PUBLIC_KEY`, `NEXT_PUBLIC_TURNSTILE_SITE_KEY`. Pass repo/org variables from the caller with `with: next-public-base-url: ${{ vars.NEXT_PUBLIC_BASE_URL }}`, or map GitHub Environment variables via a small `runs-on` job that has `environment:` and passes values into `with` / `secrets`.
+Optional **secrets** (when `github-environment` is empty): `NEXT_PUBLIC_*` override the matching `with` input when non-empty. When `github-environment` is set, the build job reads those names from the Environment (and repo) via `vars` / `secrets` on the Build step instead.
 
 ### `azure-webapp-deploy.yml`
 
