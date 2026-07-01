@@ -86,23 +86,24 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.sonar/cache
-          key: ${{ runner.os }}-sonar-${{ inputs.sonar-project-key }}
+          # Bump suffix when analyzer downloads fail with "Plugin resource not found"
+          key: ${{ runner.os }}-sonar-v2-${{ inputs.sonar-project-key }}
           restore-keys: |
-            ${{ runner.os }}-sonar-${{ inputs.sonar-project-key }}-
-            ${{ runner.os }}-sonar-
+            ${{ runner.os }}-sonar-v2-${{ inputs.sonar-project-key }}-
+            ${{ runner.os }}-sonar-v2-
 
       - name: Cache SonarScanner and dotnet-coverage
         id: cache-sonar-tools
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/dotnet-sonar-tools
-          key: ${{ runner.os }}-dotnet-sonar-tools-v1
+          key: ${{ runner.os }}-dotnet-sonar-tools-v2
 
       - name: Install SonarScanner and dotnet-coverage
         if: steps.cache-sonar-tools.outputs.cache-hit != 'true'
         run: |
           mkdir -p "${{ runner.temp }}/dotnet-sonar-tools"
-          dotnet tool install dotnet-sonarscanner --tool-path "${{ runner.temp }}/dotnet-sonar-tools"
+          dotnet tool install dotnet-sonarscanner --version 11.2.1 --tool-path "${{ runner.temp }}/dotnet-sonar-tools"
           dotnet tool install dotnet-coverage    --tool-path "${{ runner.temp }}/dotnet-sonar-tools"
 
       - name: Add analysis tools to PATH
@@ -122,15 +123,32 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
-          dotnet-sonarscanner begin \
-            /k:"${{ inputs.sonar-project-key }}" \
-            /o:"${{ inputs.sonar-organization }}" \
-            /n:"${{ inputs.sonar-project-name }}" \
-            /v:"${GITHUB_SHA}" \
-            /d:sonar.host.url="${{ inputs.sonar-host-url }}" \
-            /d:sonar.token="${SONAR_TOKEN}" \
-            /d:sonar.branch.name="${GITHUB_REF_NAME}" \
+          begin_args=(
+            /k:"${{ inputs.sonar-project-key }}"
+            /o:"${{ inputs.sonar-organization }}"
+            /n:"${{ inputs.sonar-project-name }}"
+            /v:"${GITHUB_SHA}"
+            /d:sonar.host.url="${{ inputs.sonar-host-url }}"
+            /d:sonar.token="${SONAR_TOKEN}"
+            /d:sonar.branch.name="${GITHUB_REF_NAME}"
             /d:sonar.cs.vscoveragexml.reportsPaths=coverage.xml
+            /d:sonar.ws.timeout=180
+          )
+
+          max_attempts=3
+          for attempt in $(seq 1 "$max_attempts"); do
+            echo "dotnet-sonarscanner begin (attempt ${attempt}/${max_attempts})"
+            if dotnet-sonarscanner begin "${begin_args[@]}"; then
+              exit 0
+            fi
+            if [ "$attempt" -eq "$max_attempts" ]; then
+              echo "SonarCloud begin failed after ${max_attempts} attempts"
+              exit 1
+            fi
+            echo "Clearing Sonar caches and retrying in 15s..."
+            rm -rf ~/.sonar/cache ~/.sonarqube "${{ runner.temp }}/.sonarqube"
+            sleep 15
+          done
 
       - name: Build
         working-directory: ${{ steps.workdir.outputs.path }}
