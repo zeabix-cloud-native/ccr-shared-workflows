@@ -148,6 +148,7 @@ jobs:
           NEXT_PUBLIC_BASE_URL: ${{ secrets.NEXT_PUBLIC_BASE_URL || inputs.next-public-base-url }}
           NEXT_PUBLIC_OMISE_PUBLIC_KEY: ${{ secrets.NEXT_PUBLIC_OMISE_PUBLIC_KEY || inputs.next-public-omise-public-key }}
           NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ secrets.NEXT_PUBLIC_TURNSTILE_SITE_KEY || inputs.next-public-turnstile-site-key }}
+          NEXT_PUBLIC_TERM_AND_POLICY: ${{ secrets.NEXT_PUBLIC_TERM_AND_POLICY || inputs.next-public-term-and-policy }}
         run: |
           ${{ inputs.build-command }}
           ls -al
@@ -257,6 +258,7 @@ jobs:
           NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ secrets.NEXT_PUBLIC_TURNSTILE_SITE_KEY || vars.NEXT_PUBLIC_TURNSTILE_SITE_KEY }}
           TURNSTILE_SITE_KEY: ${{ secrets.TURNSTILE_SITE_KEY || vars.TURNSTILE_SITE_KEY }}
           TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
+          NEXT_PUBLIC_TERM_AND_POLICY: ${{ secrets.NEXT_PUBLIC_TERM_AND_POLICY || vars.NEXT_PUBLIC_TERM_AND_POLICY }}
         run: |
           ${{ inputs.build-command }}
           ls -al
