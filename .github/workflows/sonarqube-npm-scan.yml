@@ -124,7 +124,7 @@ jobs:
           node-version: ${{ inputs.node-version }}
 
       - name: Cache npm
-        uses: actions/cache@v4
+        uses: actions/cache@v4.2.2
         with:
           path: ~/.npm
           key: ${{ runner.os }}-npm-${{ inputs.cache-key-prefix }}-${{ hashFiles(format('{0}/package-lock.json', steps.workdir.outputs.path), format('{0}/package.json', steps.workdir.outputs.path)) }}
@@ -133,7 +133,7 @@ jobs:
             ${{ runner.os }}-npm-
 
       - name: Cache SonarCloud packages
-        uses: actions/cache@v4
+        uses: actions/cache@v4.2.2
         with:
           path: ~/.sonar/cache
           key: ${{ runner.os }}-sonar-npm-v1-${{ inputs.sonar-project-key }}
@@ -157,7 +157,7 @@ jobs:
 
       - name: SonarCloud Scan
         if: ${{ !inputs.run-tests-with-coverage }}
-        uses: SonarSource/sonarcloud-github-action@v4
+        uses: SonarSource/sonarqube-scan-action@v8.2.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
@@ -173,7 +173,7 @@ jobs:
 
       - name: SonarCloud Scan (with coverage)
         if: ${{ inputs.run-tests-with-coverage }}
-        uses: SonarSource/sonarcloud-github-action@v4
+        uses: SonarSource/sonarqube-scan-action@v8.2.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
