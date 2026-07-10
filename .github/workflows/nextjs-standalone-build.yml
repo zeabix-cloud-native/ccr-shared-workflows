@@ -94,7 +94,7 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Determine working directory
         id: workdir
@@ -120,12 +120,12 @@ jobs:
           fi
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: ${{ inputs.node-version }}
 
       - name: Cache npm
-        uses: actions/cache@v4.2.2
+        uses: actions/cache@v6
         with:
           path: ~/.npm
           key: ${{ runner.os }}-npm-${{ inputs.cache-key-prefix }}-${{ hashFiles(format('{0}/package-lock.json', steps.workdir.outputs.path), format('{0}/package.json', steps.workdir.outputs.path)) }}
@@ -187,7 +187,7 @@ jobs:
           ls -lh "${{ inputs.tarball-filename }}"
 
       - name: Upload artifact for deployment job
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ inputs.artifact-name }}
           path: ${{ steps.workdir.outputs.path }}/${{ inputs.tarball-filename }}
@@ -202,7 +202,7 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Determine working directory
         id: workdir
@@ -228,12 +228,12 @@ jobs:
           fi
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: ${{ inputs.node-version }}
 
       - name: Cache npm
-        uses: actions/cache@v4.2.2
+        uses: actions/cache@v6
         with:
           path: ~/.npm
           key: ${{ runner.os }}-npm-${{ inputs.cache-key-prefix }}-${{ hashFiles(format('{0}/package-lock.json', steps.workdir.outputs.path), format('{0}/package.json', steps.workdir.outputs.path)) }}
@@ -297,7 +297,7 @@ jobs:
           ls -lh "${{ inputs.tarball-filename }}"
 
       - name: Upload artifact for deployment job
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ inputs.artifact-name }}
           path: ${{ steps.workdir.outputs.path }}/${{ inputs.tarball-filename }}
