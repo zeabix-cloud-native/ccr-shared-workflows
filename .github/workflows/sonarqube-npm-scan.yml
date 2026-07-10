@@ -143,35 +143,38 @@ jobs:
         working-directory: ${{ steps.workdir.outputs.path }}
         run: ${{ inputs.test-command }}
 
-      - name: SonarQube Scan
-        if: ${{ !inputs.run-tests-with-coverage }}
-        uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
+      # Properties file avoids shell splitting when projectName contains spaces.
+      - name: Write sonar-project.properties
+        working-directory: ${{ steps.workdir.outputs.path }}
         env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        with:
-          projectBaseDir: ${{ steps.workdir.outputs.path }}
-          args: >
-            -Dsonar.projectKey=${{ inputs.sonar-project-key }}
-            -Dsonar.organization=${{ inputs.sonar-organization }}
-            -Dsonar.projectName="${{ inputs.sonar-project-name }}"
-            -Dsonar.host.url=${{ inputs.sonar-host-url }}
-            -Dsonar.sources=${{ inputs.sonar-sources }}
-            -Dsonar.exclusions=${{ inputs.sonar-exclusions }}
-            -Dsonar.typescript.tsconfigPath=${{ inputs.sonar-tsconfig-path }}
+          SONAR_PROJECT_KEY: ${{ inputs.sonar-project-key }}
+          SONAR_ORGANIZATION: ${{ inputs.sonar-organization }}
+          SONAR_PROJECT_NAME: ${{ inputs.sonar-project-name }}
+          SONAR_HOST_URL: ${{ inputs.sonar-host-url }}
+          SONAR_SOURCES: ${{ inputs.sonar-sources }}
+          SONAR_EXCLUSIONS: ${{ inputs.sonar-exclusions }}
+          SONAR_TSCONFIG: ${{ inputs.sonar-tsconfig-path }}
+          SONAR_COVERAGE_PATH: ${{ inputs.coverage-report-path }}
+          RUN_COVERAGE: ${{ inputs.run-tests-with-coverage }}
+        run: |
+          cat > sonar-project.properties <<EOF
+          sonar.projectKey=${SONAR_PROJECT_KEY}
+          sonar.organization=${SONAR_ORGANIZATION}
+          sonar.projectName=${SONAR_PROJECT_NAME}
+          sonar.host.url=${SONAR_HOST_URL}
+          sonar.sources=${SONAR_SOURCES}
+          sonar.exclusions=${SONAR_EXCLUSIONS}
+          sonar.typescript.tsconfigPath=${SONAR_TSCONFIG}
+          EOF
+          if [ "${RUN_COVERAGE}" = "true" ]; then
+            echo "sonar.javascript.lcov.reportPaths=${SONAR_COVERAGE_PATH}" >> sonar-project.properties
+          fi
+          echo "=== sonar-project.properties ==="
+          cat sonar-project.properties
 
-      - name: SonarQube Scan (with coverage)
-        if: ${{ inputs.run-tests-with-coverage }}
+      - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           projectBaseDir: ${{ steps.workdir.outputs.path }}
-          args: >
-            -Dsonar.projectKey=${{ inputs.sonar-project-key }}
-            -Dsonar.organization=${{ inputs.sonar-organization }}
-            -Dsonar.projectName="${{ inputs.sonar-project-name }}"
-            -Dsonar.host.url=${{ inputs.sonar-host-url }}
-            -Dsonar.sources=${{ inputs.sonar-sources }}
-            -Dsonar.exclusions=${{ inputs.sonar-exclusions }}
-            -Dsonar.typescript.tsconfigPath=${{ inputs.sonar-tsconfig-path }}
-            -Dsonar.javascript.lcov.reportPaths=${{ inputs.coverage-report-path }}
