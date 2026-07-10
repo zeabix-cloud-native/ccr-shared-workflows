@@ -153,7 +153,7 @@ jobs:
           args: >
             -Dsonar.projectKey=${{ inputs.sonar-project-key }}
             -Dsonar.organization=${{ inputs.sonar-organization }}
-            -Dsonar.projectName=${{ inputs.sonar-project-name }}
+            -Dsonar.projectName="${{ inputs.sonar-project-name }}"
             -Dsonar.host.url=${{ inputs.sonar-host-url }}
             -Dsonar.sources=${{ inputs.sonar-sources }}
             -Dsonar.exclusions=${{ inputs.sonar-exclusions }}
@@ -169,7 +169,7 @@ jobs:
           args: >
             -Dsonar.projectKey=${{ inputs.sonar-project-key }}
             -Dsonar.organization=${{ inputs.sonar-organization }}
-            -Dsonar.projectName=${{ inputs.sonar-project-name }}
+            -Dsonar.projectName="${{ inputs.sonar-project-name }}"
             -Dsonar.host.url=${{ inputs.sonar-host-url }}
             -Dsonar.sources=${{ inputs.sonar-sources }}
             -Dsonar.exclusions=${{ inputs.sonar-exclusions }}
