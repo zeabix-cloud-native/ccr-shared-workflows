@@ -1,0 +1,189 @@
+name: SonarCloud Scan — npm / TypeScript (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: Directory containing package.json (when autodetect is false)
+        required: false
+        type: string
+        default: '.'
+      autodetect-working-directory:
+        description: If true, use package.json at repo root, else monorepo-package-path
+        required: false
+        type: boolean
+        default: false
+      monorepo-package-path:
+        description: Path to the app when autodetect is true and root has no package.json
+        required: false
+        type: string
+        default: 'application_service/ccr-frontend-backoffice'
+      node-version:
+        required: false
+        type: string
+        default: '22.x'
+      npm-install-mode:
+        description: install or ci (ci requires package-lock.json)
+        required: false
+        type: string
+        default: 'ci'
+      cache-key-prefix:
+        description: Prefix for npm cache key
+        required: false
+        type: string
+        default: 'sonar-npm'
+      sonar-project-key:
+        description: SonarCloud project key
+        required: true
+        type: string
+      sonar-organization:
+        description: SonarCloud organization key
+        required: true
+        type: string
+      sonar-project-name:
+        description: Display name shown in SonarCloud UI
+        required: true
+        type: string
+      sonar-host-url:
+        description: Override only for self-hosted SonarQube
+        required: false
+        type: string
+        default: 'https://sonarcloud.io'
+      sonar-sources:
+        description: Comma-separated source roots relative to the app directory
+        required: false
+        type: string
+        default: 'app,components,lib,config,contexts,hooks,providers,utils,styles'
+      sonar-exclusions:
+        description: Comma-separated exclusion globs relative to the app directory
+        required: false
+        type: string
+        default: '**/node_modules/**,**/.next/**,**/coverage/**,**/public/**,**/*.test.ts,**/*.test.tsx,**/*.spec.ts,**/*.spec.tsx'
+      sonar-tsconfig-path:
+        description: Path to tsconfig.json relative to the app directory
+        required: false
+        type: string
+        default: 'tsconfig.json'
+      run-tests-with-coverage:
+        description: If true, run test-command before scan and upload lcov coverage
+        required: false
+        type: boolean
+        default: false
+      test-command:
+        description: Shell command to run tests with coverage (app working directory)
+        required: false
+        type: string
+        default: 'npm test -- --coverage --coverageReporters=lcov'
+      coverage-report-path:
+        description: LCOV report path relative to the app directory
+        required: false
+        type: string
+        default: 'coverage/lcov.info'
+    secrets:
+      SONAR_TOKEN:
+        required: true
+
+jobs:
+  sonarqube:
+    name: SonarCloud Scan (npm SAST)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine working directory
+        id: workdir
+        run: |
+          if [ "${{ inputs.autodetect-working-directory }}" = "true" ]; then
+            if [ -f "package.json" ]; then
+              echo "path=." >> "$GITHUB_OUTPUT"
+              echo "Using repo root (package.json at root)"
+            elif [ -f "${{ inputs.monorepo-package-path }}/package.json" ]; then
+              echo "path=${{ inputs.monorepo-package-path }}" >> "$GITHUB_OUTPUT"
+              echo "Using ${{ inputs.monorepo-package-path }}"
+            else
+              echo "Error: package.json not found at root or under ${{ inputs.monorepo-package-path }}"
+              exit 1
+            fi
+          else
+            if [ ! -f "${{ inputs.working-directory }}/package.json" ]; then
+              echo "Error: no package.json under ${{ inputs.working-directory }}"
+              exit 1
+            fi
+            echo "path=${{ inputs.working-directory }}" >> "$GITHUB_OUTPUT"
+            echo "Using ${{ inputs.working-directory }}"
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ inputs.cache-key-prefix }}-${{ hashFiles(format('{0}/package-lock.json', steps.workdir.outputs.path), format('{0}/package.json', steps.workdir.outputs.path)) }}
+          restore-keys: |
+            ${{ runner.os }}-npm-${{ inputs.cache-key-prefix }}-
+            ${{ runner.os }}-npm-
+
+      - name: Cache SonarCloud packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar-npm-v1-${{ inputs.sonar-project-key }}
+          restore-keys: |
+            ${{ runner.os }}-sonar-npm-v1-${{ inputs.sonar-project-key }}-
+            ${{ runner.os }}-sonar-npm-v1-
+
+      - name: Install dependencies
+        working-directory: ${{ steps.workdir.outputs.path }}
+        run: |
+          if [ "${{ inputs.npm-install-mode }}" = "ci" ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Run tests with coverage
+        if: ${{ inputs.run-tests-with-coverage }}
+        working-directory: ${{ steps.workdir.outputs.path }}
+        run: ${{ inputs.test-command }}
+
+      - name: SonarCloud Scan
+        if: ${{ !inputs.run-tests-with-coverage }}
+        uses: SonarSource/sonarcloud-github-action@v4
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          projectBaseDir: ${{ steps.workdir.outputs.path }}
+          args: >
+            -Dsonar.projectKey=${{ inputs.sonar-project-key }}
+            -Dsonar.organization=${{ inputs.sonar-organization }}
+            -Dsonar.projectName=${{ inputs.sonar-project-name }}
+            -Dsonar.host.url=${{ inputs.sonar-host-url }}
+            -Dsonar.sources=${{ inputs.sonar-sources }}
+            -Dsonar.exclusions=${{ inputs.sonar-exclusions }}
+            -Dsonar.typescript.tsconfigPath=${{ inputs.sonar-tsconfig-path }}
+
+      - name: SonarCloud Scan (with coverage)
+        if: ${{ inputs.run-tests-with-coverage }}
+        uses: SonarSource/sonarcloud-github-action@v4
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          projectBaseDir: ${{ steps.workdir.outputs.path }}
+          args: >
+            -Dsonar.projectKey=${{ inputs.sonar-project-key }}
+            -Dsonar.organization=${{ inputs.sonar-organization }}
+            -Dsonar.projectName=${{ inputs.sonar-project-name }}
+            -Dsonar.host.url=${{ inputs.sonar-host-url }}
+            -Dsonar.sources=${{ inputs.sonar-sources }}
+            -Dsonar.exclusions=${{ inputs.sonar-exclusions }}
+            -Dsonar.typescript.tsconfigPath=${{ inputs.sonar-tsconfig-path }}
+            -Dsonar.javascript.lcov.reportPaths=${{ inputs.coverage-report-path }}
