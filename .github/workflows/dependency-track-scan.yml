@@ -90,7 +90,7 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Resolve working directory
         id: workdir
@@ -110,12 +110,12 @@ jobs:
           fi
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ inputs.dotnet-version }}
 
       - name: Cache NuGet packages
-        uses: actions/cache@v4.2.2
+        uses: actions/cache@v6
         with:
           path: ~/.nuget/packages
           key: ${{ runner.os }}-nuget-${{ inputs.project-name }}-${{ hashFiles(format('{0}/**/*.csproj', steps.workdir.outputs.path)) }}
@@ -129,7 +129,7 @@ jobs:
 
       - name: Cache CycloneDX tool
         id: cache-cyclonedx
-        uses: actions/cache@v4.2.2
+        uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/cyclonedx-tools
           key: ${{ runner.os }}-cyclonedx-v1
