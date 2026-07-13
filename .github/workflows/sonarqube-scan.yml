@@ -56,7 +56,7 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -78,12 +78,12 @@ jobs:
           fi
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ inputs.dotnet-version }}
 
       - name: Cache SonarCloud packages
-        uses: actions/cache@v4.2.2
+        uses: actions/cache@v6
         with:
           path: ~/.sonar/cache
           # Bump suffix when analyzer downloads fail with "Plugin resource not found"
@@ -94,7 +94,7 @@ jobs:
 
       - name: Cache SonarScanner and dotnet-coverage
         id: cache-sonar-tools
-        uses: actions/cache@v4.2.2
+        uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/dotnet-sonar-tools
           key: ${{ runner.os }}-dotnet-sonar-tools-v2
@@ -110,7 +110,7 @@ jobs:
         run: echo "${{ runner.temp }}/dotnet-sonar-tools" >> $GITHUB_PATH
 
       - name: Cache NuGet packages
-        uses: actions/cache@v4.2.2
+        uses: actions/cache@v6
         with:
           path: ~/.nuget/packages
           key: ${{ runner.os }}-nuget-${{ inputs.sonar-project-key }}-${{ hashFiles(format('{0}/**/*.csproj', steps.workdir.outputs.path)) }}
