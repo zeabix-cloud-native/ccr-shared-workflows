@@ -71,6 +71,13 @@ on:
         required: false
         type: boolean
         default: false
+      slim-bom:
+        description: >
+          Strip verbose CycloneDX fields (evidence, licenses, etc.) before upload.
+          Helps avoid HTTP 413 when nginx client_max_body_size is ~1MB.
+        required: false
+        type: boolean
+        default: true
       max-critical:
         required: false
         type: number
@@ -187,6 +194,15 @@ jobs:
           ls -la bom.json
           echo "BOM size (bytes): $(wc -c < bom.json)"
           head -c 400 bom.json && echo
+
+      - name: Slim BOM for upload
+        if: ${{ inputs.slim-bom }}
+        working-directory: ${{ steps.workdir.outputs.path }}
+        run: |
+          set -euo pipefail
+          jq '.components |= map(del(.evidence, .licenses, .externalReferences, .properties))' bom.json > bom.upload.json
+          mv bom.upload.json bom.json
+          echo "BOM size after slim (bytes): $(wc -c < bom.json)"
 
       - name: Health check Dependency-Track API
         env:
