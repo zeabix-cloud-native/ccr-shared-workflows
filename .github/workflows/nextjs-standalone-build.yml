@@ -149,6 +149,7 @@ jobs:
           NEXT_PUBLIC_OMISE_PUBLIC_KEY: ${{ secrets.NEXT_PUBLIC_OMISE_PUBLIC_KEY || inputs.next-public-omise-public-key }}
           NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ secrets.NEXT_PUBLIC_TURNSTILE_SITE_KEY || inputs.next-public-turnstile-site-key }}
           NEXT_PUBLIC_TERM_AND_POLICY: ${{ secrets.NEXT_PUBLIC_TERM_AND_POLICY || inputs.next-public-term-and-policy }}
+          NEXT_PUBLIC_GA_MEASUREMENT_ID: ${{ secrets.NEXT_PUBLIC_GA_MEASUREMENT_ID || inputs.next-public-ga-measurement-id }}
         run: |
           ${{ inputs.build-command }}
           ls -al
